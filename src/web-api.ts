@@ -1,5 +1,4 @@
 import { config } from './config.js';
-import { ensureParentDirectory } from './runtime-files.js';
 
 const APPLY_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const DISCORD_ID_PATTERN = /^\d{6,32}$/;
@@ -31,6 +30,8 @@ export type Apply = {
   id: string;
   status: ApplyStatus;
   title?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
   webUserId?: string | null;
   webChatId?: string | null;
   discordUserId?: string | null;
@@ -94,6 +95,12 @@ type ApplyMessageEventsResponse = {
   error?: string;
 };
 type ApplyResponse = { apply?: Apply; link?: ApplyLink; error?: string };
+type ApplyDiscordPayloadResponse = {
+  applicationId?: string;
+  status?: string;
+  payload?: JsonRecord;
+  error?: string;
+};
 type SendApplyMessagePayload = {
   content: string;
   discordUserId: string;
@@ -205,6 +212,30 @@ function pickItems<T>(payload: { applys?: T[]; applications?: T[]; items?: T[]; 
   return payload.applys ?? payload.applications ?? payload.items ?? payload.messages ?? (payload.message ? [payload.message] : []);
 }
 
+function parseApply(raw: JsonRecord): Apply | null {
+  const id = typeof raw.id === 'string' && raw.id.length > 0 ? raw.id : null;
+  const status = typeof raw.status === 'string' && ALLOWED_APPLY_STATUSES.has(raw.status as ApplyStatus)
+    ? (raw.status as ApplyStatus)
+    : null;
+
+  if (!id || !status) return null;
+
+  return {
+    id,
+    status,
+    title: typeof raw.title === 'string' ? raw.title : null,
+    createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : null,
+    updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : null,
+    webUserId: typeof raw.webUserId === 'string' ? raw.webUserId : null,
+    webChatId: typeof raw.webChatId === 'string' ? raw.webChatId : null,
+    discordUserId: typeof raw.discordUserId === 'string' ? raw.discordUserId : null,
+    discordGuildId: typeof raw.discordGuildId === 'string' ? raw.discordGuildId : null,
+    discordChannelId: typeof raw.discordChannelId === 'string' ? raw.discordChannelId : null,
+    discordMessageId: typeof raw.discordMessageId === 'string' ? raw.discordMessageId : null,
+    lastMessageAt: typeof raw.lastMessageAt === 'string' ? raw.lastMessageAt : null,
+  };
+}
+
 function pickCursor(payload: JsonRecord) {
   const cursor = payload.nextCursor ?? payload.cursor;
   return typeof cursor === 'string' && cursor.length > 0 ? cursor : null;
@@ -282,10 +313,17 @@ export async function getProgression() {
 }
 
 export async function listActiveApplys(limit = 25, cursor?: string) {
+  return listApplysByStatus('active', limit, cursor);
+}
+
+export async function listApplysByStatus(status: 'active' | 'resolved' | ApplyStatus, limit = 25, cursor?: string) {
   const safeLimit = clampLimit(limit, 25);
-  const suffix = new URLSearchParams({ status: 'active', limit: String(safeLimit), ...(cursor ? { cursor } : {}) }).toString();
+  const suffix = new URLSearchParams({ status, limit: String(safeLimit), ...(cursor ? { cursor } : {}) }).toString();
   const data = await requestJson<ApplyListResponse>(`/api/bot/recruitment/applications?${suffix}`);
-  return { applys: pickItems<Apply>(data), cursor: data.nextCursor ?? data.cursor ?? null };
+  const applys = pickItems<Apply | JsonRecord>(data)
+    .map((entry) => parseApply(entry as JsonRecord))
+    .filter((entry): entry is Apply => entry !== null);
+  return { applys, cursor: data.nextCursor ?? data.cursor ?? null };
 }
 
 export async function getApplyMessages(applyId: string, limit = 50, cursor?: string) {
@@ -329,6 +367,28 @@ export async function getApplyLink(applyId: string) {
   assertApplyId(applyId);
   const data = await requestJson<ApplyResponse>(`/api/bot/recruitment/applications/${encodeURIComponent(applyId)}/link`);
   return data.link ?? null;
+}
+
+export async function saveApplyLink(applyId: string, discordMessageId: string) {
+  assertApplyId(applyId);
+  if (!discordMessageId.trim()) {
+    throw new Error('discordMessageId cannot be empty');
+  }
+
+  const data = await requestJsonWithBody<ApplyResponse>(
+    `/api/bot/recruitment/applications/${encodeURIComponent(applyId)}/link`,
+    'PATCH',
+    { discordMessageId },
+  );
+  return data.link ?? null;
+}
+
+export async function getApplyDiscordPayload(applyId: string, announce = false) {
+  assertApplyId(applyId);
+  const suffix = new URLSearchParams({ ...(announce ? { announce: 'true' } : {}) }).toString();
+  const path = `/api/bot/recruitment/applications/${encodeURIComponent(applyId)}/discord-payload${suffix ? `?${suffix}` : ''}`;
+  const data = await requestJson<ApplyDiscordPayloadResponse>(path);
+  return data.payload ?? null;
 }
 
 export async function getApplyEvents(applicationId?: string, limit = 25, cursor?: string) {

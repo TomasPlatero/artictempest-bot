@@ -22,6 +22,8 @@ Discord bot for Artic Tempest using Bun + TypeScript + discord.js.
 
 El bot usa `BOT_API_TOKEN` o `BOT_API_TOKEN_CACHE_FILE` para autenticarse con la web. Los JSON generados quedan bajo `generated/`.
 
+El bot también crea y actualiza los embeds de reclutamiento leyendo la API de la web; la web ya no le envía mensajes directamente a Discord.
+
 ## Commands
 
 Temporarily disabled.

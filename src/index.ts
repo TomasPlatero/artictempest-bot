@@ -13,13 +13,15 @@ import { config } from './config.js';
 import { ensureParentDirectory } from './runtime-files.js';
 import {
   getApplyEvents,
+  getApplyDiscordPayload,
   getApplyLink,
   getApplyMessages,
   getBotApiToken,
   getProgression,
   getRecruitmentCount,
   getWebLinks,
-  listActiveApplys,
+  listApplysByStatus,
+  saveApplyLink,
   sendApplyMessage,
   type Apply,
   type ApplyMessage,
@@ -32,6 +34,10 @@ import {
 type SyncState = {
   cursors: Record<string, string>;
   recentMessageIds: Record<string, number>;
+  applyEmbeds: Record<
+    string,
+    { messageId: string; status: ApplyStatus; updatedAt: string; channelId: string }
+  >;
 };
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
@@ -39,6 +45,7 @@ const state = await loadState();
 let pollTimer: Timer | null = null;
 let pollRunning = false;
 let pollSuspendedForAuth = false;
+let embedPollRunning = false;
 
 async function clearCommands() {
   const rest = new REST({ version: '10' }).setToken(config.discordBotToken);
@@ -57,16 +64,17 @@ async function loadState(): Promise<SyncState> {
   try {
     const file = Bun.file(config.applyStateFile);
     if (!(await file.exists())) {
-      return { cursors: {}, recentMessageIds: {} };
+      return { cursors: {}, recentMessageIds: {}, applyEmbeds: {} };
     }
 
     const json = (await file.json()) as Partial<SyncState>;
     return {
       cursors: json.cursors ?? {},
       recentMessageIds: json.recentMessageIds ?? {},
+      applyEmbeds: json.applyEmbeds ?? {},
     };
   } catch {
-    return { cursors: {}, recentMessageIds: {} };
+    return { cursors: {}, recentMessageIds: {}, applyEmbeds: {} };
   }
 }
 
@@ -90,16 +98,14 @@ function isKnownMessage(messageId: string) {
   return Boolean(state.recentMessageIds[messageId]);
 }
 
-function formatApply(apply: Apply) {
-  const parts = [apply.title ?? apply.id, `estado: ${apply.status}`];
-  if (apply.discordUserId) parts.push(`discord: ${apply.discordUserId}`);
-  if (apply.discordChannelId) parts.push(`channel: ${apply.discordChannelId}`);
-  return parts.join(' | ');
-}
-
-function formatMessage(message: ApplyMessage) {
-  const sender = message.senderType ?? 'unknown';
-  return `**${sender}**: ${message.content}`;
+function rememberApplyEmbed(
+  applyId: string,
+  messageId: string,
+  status: ApplyStatus,
+  updatedAt: string,
+  channelId: string,
+) {
+  state.applyEmbeds[applyId] = { messageId, status, updatedAt, channelId };
 }
 
 function discordEmbedForApplyMessage(
@@ -136,6 +142,118 @@ async function sendToDiscordChannel(channelId: string, embed: EmbedBuilder) {
   };
 
   await textChannel.send({ embeds: [embed] });
+}
+
+async function sendApplyPayloadToDiscord(
+  channelId: string,
+  payload: Record<string, unknown>,
+) {
+  const channel = await client.channels.fetch(channelId);
+  if (!channel || !channel.isTextBased() || channel.type === ChannelType.DM) {
+    throw new Error(`Channel ${channelId} is not available for text delivery`);
+  }
+
+  const textChannel = channel as TextBasedChannel & {
+    send: (payload: Record<string, unknown>) => Promise<{ id: string }>;
+  };
+
+  return textChannel.send(payload);
+}
+
+async function editApplyPayloadInDiscord(
+  channelId: string,
+  messageId: string,
+  payload: Record<string, unknown>,
+) {
+  const channel = await client.channels.fetch(channelId);
+  if (!channel || !channel.isTextBased() || channel.type === ChannelType.DM) {
+    throw new Error(`Channel ${channelId} is not available for text delivery`);
+  }
+
+  const textChannel = channel as TextBasedChannel & {
+    messages: { fetch: (id: string) => Promise<{ edit: (payload: Record<string, unknown>) => Promise<unknown> }> };
+  };
+
+  const message = await textChannel.messages.fetch(messageId);
+  return message.edit(payload);
+}
+
+async function pollRecruitmentEmbeds() {
+  if (embedPollRunning || !client.isReady() || pollSuspendedForAuth) return;
+  embedPollRunning = true;
+
+  try {
+    const [activeResult, resolvedResult] = await Promise.all([
+      listApplysByStatus('active', 100),
+      listApplysByStatus('resolved', 100),
+    ]);
+
+    const applyMap = new Map<string, Apply>();
+    for (const apply of [...activeResult.applys, ...resolvedResult.applys]) {
+      applyMap.set(apply.id, apply);
+    }
+
+    for (const apply of applyMap.values()) {
+      const snapshot = state.applyEmbeds[apply.id] ?? null;
+
+      const channelId = apply.discordChannelId ?? snapshot?.channelId ?? null;
+      const currentUpdatedAt = apply.updatedAt ?? apply.createdAt ?? '';
+      const messageId = apply.discordMessageId ?? snapshot?.messageId ?? null;
+
+      const shouldRefresh =
+        !messageId ||
+        !snapshot ||
+        snapshot.status !== apply.status ||
+        snapshot.updatedAt !== currentUpdatedAt ||
+        snapshot.channelId !== channelId;
+
+      if (!channelId || !shouldRefresh) {
+        if (messageId && channelId) {
+          rememberApplyEmbed(apply.id, messageId, apply.status, currentUpdatedAt, channelId);
+        }
+        continue;
+      }
+
+      const payload = await getApplyDiscordPayload(apply.id, !messageId);
+      if (!payload) continue;
+
+      if (!messageId) {
+        const sent = await sendApplyPayloadToDiscord(channelId, payload);
+        rememberApplyEmbed(apply.id, sent.id, apply.status, currentUpdatedAt, channelId);
+        await saveApplyLink(apply.id, sent.id).catch((error) => {
+          console.error('Failed to persist apply embed link:', error);
+        });
+        continue;
+      }
+
+      await editApplyPayloadInDiscord(channelId, messageId, payload);
+      rememberApplyEmbed(apply.id, messageId, apply.status, currentUpdatedAt, channelId);
+      if (apply.discordMessageId !== messageId) {
+        await saveApplyLink(apply.id, messageId).catch((error) => {
+          console.error('Failed to refresh apply embed link:', error);
+        });
+      }
+    }
+
+    await saveState();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes('failed with 401')) {
+      pollSuspendedForAuth = true;
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = null;
+      console.error('Recruitment embed polling suspended: web API auth failed (401). Set BOT_API_TOKEN or refresh generated/bot-api-token.json, then restart the bot.');
+    } else {
+      console.error('Recruitment embed poll error:', error);
+    }
+  } finally {
+    embedPollRunning = false;
+  }
+}
+
+async function pollRecruitmentSync() {
+  await pollRecruitmentEmbeds();
+  await pollApplyMessages();
 }
 
 async function pollApplyMessages() {
@@ -193,8 +311,8 @@ async function pollApplyMessages() {
 
 client.once(Events.ClientReady, async (readyClient) => {
   console.log(`Logged in as ${readyClient.user.tag}`);
-  await pollApplyMessages();
-  pollTimer = setInterval(() => void pollApplyMessages(), config.applyPollIntervalMs);
+  await pollRecruitmentSync();
+  pollTimer = setInterval(() => void pollRecruitmentSync(), config.applyPollIntervalMs);
 });
 
 process.on('SIGINT', async () => {
