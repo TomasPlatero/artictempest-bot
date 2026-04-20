@@ -1,4 +1,5 @@
 import { config } from './config.js';
+import { ensureParentDirectory } from './runtime-files.js';
 
 const APPLY_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const DISCORD_ID_PATTERN = /^\d{6,32}$/;

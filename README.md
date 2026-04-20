@@ -16,13 +16,15 @@ Discord bot for Artic Tempest using Bun + TypeScript + discord.js.
 - `DISCORD_GUILD_ID` (optional, recommended for testing)
 - `ARTIC_TEMPEST_WEB_URL` (default: `https://artictempest.es`)
 - `BOT_API_TOKEN` (optional, direct token override)
-- `BOT_API_TOKEN_CACHE_FILE` (default: `.bot-api-token.json`)
+- `BOT_API_TOKEN_CACHE_FILE` (default: `generated/bot-api-token.json`)
 - `APPLY_POLL_INTERVAL_MS` (default: `15000`)
-- `APPLY_STATE_FILE` (default: `apply-state.json`)
+- `APPLY_STATE_FILE` (default: `generated/apply-state.json`)
 
-El bot usa `BOT_API_TOKEN` o `BOT_API_TOKEN_CACHE_FILE` para autenticarse con la web.
+El bot usa `BOT_API_TOKEN` o `BOT_API_TOKEN_CACHE_FILE` para autenticarse con la web. Los JSON generados quedan bajo `generated/`.
 
 ## Commands
+
+Temporarily disabled.
 
 - `/status`
 - `/progreso`
