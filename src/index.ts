@@ -178,6 +178,82 @@ async function editApplyPayloadInDiscord(
   return message.edit(payload);
 }
 
+const RECRUITMENT_APPLY_PATH = '/dashboard/configuracion/reclutamiento/';
+const RECRUITMENT_EMBED_LOOKBACK_LIMIT = 50;
+
+type DiscordRecruitmentMessage = {
+  id: string;
+  embeds: Array<{ author?: { url?: string | null } | null }>;
+  components?: readonly unknown[];
+};
+
+function extractRecruitmentApplyIdFromUrl(urlValue: string | null | undefined) {
+  if (!urlValue) return null;
+
+  try {
+    const parsed = new URL(urlValue);
+    const markerIndex = parsed.pathname.indexOf(RECRUITMENT_APPLY_PATH);
+    if (markerIndex === -1) return null;
+    const applyId = parsed.pathname.slice(markerIndex + RECRUITMENT_APPLY_PATH.length).split('/')[0] ?? null;
+    return applyId && applyId.length > 0 ? applyId : null;
+  } catch {
+    const match = urlValue.match(/\/dashboard\/configuracion\/reclutamiento\/([A-Za-z0-9_-]+)/);
+    return match?.[1] ?? null;
+  }
+}
+
+function messageLinksToApply(message: DiscordRecruitmentMessage, applyId: string) {
+  for (const embed of message.embeds) {
+    if (extractRecruitmentApplyIdFromUrl(embed.author?.url) === applyId) {
+      return true;
+    }
+  }
+
+  for (const row of message.components ?? []) {
+    if (!row || typeof row !== 'object') continue;
+    const rowComponents = (row as { components?: unknown }).components;
+    if (!Array.isArray(rowComponents)) continue;
+
+    for (const component of rowComponents) {
+      if (!component || typeof component !== 'object') continue;
+      const url = (component as { url?: unknown }).url;
+      if (typeof url !== 'string') continue;
+      if (extractRecruitmentApplyIdFromUrl(url) === applyId) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+async function findExistingApplyEmbedMessageId(
+  channelId: string,
+  applyId: string,
+): Promise<string | null> {
+  const channel = await client.channels.fetch(channelId);
+  if (!channel || !channel.isTextBased() || channel.type === ChannelType.DM) {
+    return null;
+  }
+
+  const textChannel = channel as TextBasedChannel & {
+    messages: {
+      fetch: (options: { limit: number }) => Promise<{ values: () => IterableIterator<DiscordRecruitmentMessage> }>;
+    };
+  };
+
+  const messages = await textChannel.messages.fetch({ limit: RECRUITMENT_EMBED_LOOKBACK_LIMIT }).catch(() => null);
+  if (!messages) return null;
+
+  for (const message of messages.values()) {
+    if (messageLinksToApply(message, applyId)) {
+      return message.id;
+    }
+  }
+
+  return null;
+}
+
 async function pollRecruitmentEmbeds() {
   if (embedPollRunning || !client.isReady() || pollSuspendedForAuth) return;
   embedPollRunning = true;
@@ -198,7 +274,12 @@ async function pollRecruitmentEmbeds() {
 
       const channelId = apply.discordChannelId ?? snapshot?.channelId ?? null;
       const currentUpdatedAt = apply.updatedAt ?? apply.createdAt ?? '';
-      const messageId = apply.discordMessageId ?? snapshot?.messageId ?? null;
+      const knownMessageId = apply.discordMessageId ?? snapshot?.messageId ?? null;
+      let messageId: string | null = knownMessageId;
+
+      if (!messageId && channelId) {
+        messageId = await findExistingApplyEmbedMessageId(channelId, apply.id);
+      }
 
       const shouldRefresh =
         !messageId ||
@@ -214,20 +295,31 @@ async function pollRecruitmentEmbeds() {
         continue;
       }
 
+      const targetChannelId = channelId;
+
       const payload = await getApplyDiscordPayload(apply.id, !messageId);
       if (!payload) continue;
 
       if (!messageId) {
-        const sent = await sendApplyPayloadToDiscord(channelId, payload);
-        rememberApplyEmbed(apply.id, sent.id, apply.status, currentUpdatedAt, channelId);
+        const existingMessageId = await findExistingApplyEmbedMessageId(targetChannelId, apply.id);
+        if (existingMessageId) {
+          rememberApplyEmbed(apply.id, existingMessageId, apply.status, currentUpdatedAt, targetChannelId);
+          await saveApplyLink(apply.id, existingMessageId).catch((error) => {
+            console.error('Failed to persist recovered apply embed link:', error);
+          });
+          continue;
+        }
+
+        const sent = await sendApplyPayloadToDiscord(targetChannelId, payload);
+        rememberApplyEmbed(apply.id, sent.id, apply.status, currentUpdatedAt, targetChannelId);
         await saveApplyLink(apply.id, sent.id).catch((error) => {
           console.error('Failed to persist apply embed link:', error);
         });
         continue;
       }
 
-      await editApplyPayloadInDiscord(channelId, messageId, payload);
-      rememberApplyEmbed(apply.id, messageId, apply.status, currentUpdatedAt, channelId);
+      await editApplyPayloadInDiscord(targetChannelId, messageId, payload);
+      rememberApplyEmbed(apply.id, messageId, apply.status, currentUpdatedAt, targetChannelId);
       if (apply.discordMessageId !== messageId) {
         await saveApplyLink(apply.id, messageId).catch((error) => {
           console.error('Failed to refresh apply embed link:', error);
