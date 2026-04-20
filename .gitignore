@@ -1,0 +1,7 @@
+node_modules/
+.bun/
+dist/
+.env
+.bot-api-token.json
+coverage/
+.DS_Store
