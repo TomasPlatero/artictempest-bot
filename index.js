@@ -21,8 +21,8 @@ const client = new Client({
   partials: [Partials.Channel, Partials.Message],
 });
 
-client.once('ready', () => {
-  console.log(`Logged in as ${client.user.tag}`);
+client.once('clientReady', (readyClient) => {
+  console.log(`Logged in as ${readyClient.user.tag}`);
 });
 
 function buildForwardEmbed(message) {
