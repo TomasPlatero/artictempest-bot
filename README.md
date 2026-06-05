@@ -1,39 +1,38 @@
-# artictempest-bot
+# Discord absence forwarder
 
-Discord bot for Artic Tempest using Bun + TypeScript + discord.js.
+Bot sencillo para:
+- leer mensajes en un canal público de ausencias
+- reenviarlos a un canal privado de oficiales
+- borrar el mensaje original
 
 ## Setup
+1. Instala Node.js 18+.
+2. `npm install`
+4. Copia `.env.example` a `.env.local`
+5. Rellena:
+   - `DISCORD_TOKEN`
+   - `PUBLIC_ABSENCE_CHANNEL_ID`
+   - `OFFICERS_CHANNEL_ID`
+6. En Discord Developer Portal activa:
+   - **Message Content Intent**
+7. Dale al bot permisos en el canal público:
+   - Read Messages/View Channel
+   - Read Message History
+   - Manage Messages
+8. Arranca con `npm start`
 
-1. Copy `.env.example` to `.env`
-2. Install dependencies: `bun install`
-3. Run the bot: `bun run dev`
-4. Register commands manually if needed: `bun run register:commands`
+## Invitar el bot
+Usa la URL OAuth2 del portal con estos scopes:
+- `bot`
 
-## Config
+Permisos recomendados:
+- View Channel
+- Read Message History
+- Send Messages
+- Embed Links
+- Manage Messages
 
-- `DISCORD_BOT_TOKEN`
-- `DISCORD_APP_ID`
-- `DISCORD_GUILD_ID` (optional, recommended for testing)
-- `ARTIC_TEMPEST_WEB_URL` (default: `https://artictempest.es`)
-- `BOT_API_TOKEN` (optional, direct token override)
-- `BOT_API_TOKEN_CACHE_FILE` (default: `generated/bot-api-token.json`)
-- `APPLY_POLL_INTERVAL_MS` (default: `15000`)
-- `APPLY_STATE_FILE` (default: `generated/apply-state.json`)
-
-El bot usa `BOT_API_TOKEN` o `BOT_API_TOKEN_CACHE_FILE` para autenticarse con la web. Los JSON generados quedan bajo `generated/`.
-
-El bot también crea y actualiza los embeds de reclutamiento leyendo la API de la web; la web ya no le envía mensajes directamente a Discord.
-
-## Commands
-
-Temporarily disabled.
-
-- `/status`
-- `/progreso`
-- `/reclutamiento`
-- `/web`
-- `/applys`
-- `/apply messages`
-- `/apply reply`
-- `/apply status`
-- `/apply link`
+## Comportamiento
+- Solo actúa en `PUBLIC_ABSENCE_CHANNEL_ID`
+- Reenvía un embed con autor, canal, fecha, texto y adjuntos
+- Borra el mensaje original si el reenvío fue exitoso

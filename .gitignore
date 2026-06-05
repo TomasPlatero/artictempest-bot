@@ -1,8 +1,10 @@
 node_modules/
-.bun/
-dist/
 .env
-.bot-api-token.json
-generated/
-coverage/
-.DS_Store
+npm-debug.log*
+.agents/
+.atl/
+.atl
+skills-lock.json
+package-lock.json
+.env.local
+.env.example

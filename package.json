@@ -1,19 +1,14 @@
 {
-  "name": "artictempest-bot",
-  "version": "0.1.0",
-  "private": true,
-  "type": "module",
+  "name": "discord-absence-bot",
+  "version": "1.0.0",
+  "description": "Discord bot to forward absence messages to an officers channel and delete the original.",
+  "main": "index.js",
+  "type": "commonjs",
   "scripts": {
-    "dev": "bun --watch src/index.ts",
-    "start": "bun src/index.ts",
-    "check": "bun tsc --noEmit",
-    "register:commands": "bun src/register-commands.ts"
+    "start": "node index.js"
   },
   "dependencies": {
-    "discord.js": "^14.16.3"
-  },
-  "devDependencies": {
-    "bun-types": "latest",
-    "typescript": "^5.8.3"
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.5"
   }
 }
