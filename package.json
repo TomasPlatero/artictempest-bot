@@ -1,6 +1,6 @@
 {
   "name": "discord-absence-bot",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Discord bot for Artic Tempest: absence forwarding + recruitment DM bridge.",
   "main": "index.js",
   "type": "commonjs",
