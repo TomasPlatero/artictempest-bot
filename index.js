@@ -5,12 +5,10 @@ const { createDiscordClient } = require('./lib/discord/client');
 const { loadDiscordConfigWithRetry } = require('./lib/config/supabase-discord-config');
 const { createAbsenceForwarder } = require('./lib/discord/absence-forwarder');
 const { createRecruitmentBridge } = require('./lib/recruitment/bridge');
-const { Redis } = require('@upstash/redis');
+const { createSupabaseClient } = require('./lib/supabase/client');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
-const UPSTASH_REDIS_REST_URL = process.env.UPSTASH_REDIS_REST_URL;
-const UPSTASH_REDIS_REST_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 const WEB_BASE_URL = process.env.WEB_BASE_URL;
 const WEB_BOT_API_TOKEN = process.env.WEB_BOT_API_TOKEN;
 
@@ -41,23 +39,19 @@ async function main() {
     officersChannelId,
   });
 
-  if (UPSTASH_REDIS_REST_URL && UPSTASH_REDIS_REST_TOKEN &&
-      WEB_BASE_URL && WEB_BOT_API_TOKEN) {
-    const redisClient = new Redis({
-      url: UPSTASH_REDIS_REST_URL,
-      token: UPSTASH_REDIS_REST_TOKEN,
-    });
+  if (WEB_BASE_URL && WEB_BOT_API_TOKEN) {
+    const supabaseClient = createSupabaseClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     const bridge = createRecruitmentBridge({
       client,
       webBaseUrl: WEB_BASE_URL,
       webApiToken: WEB_BOT_API_TOKEN,
-      redisClient,
+      supabaseClient,
     });
     bridge.start();
   } else {
     console.warn(
-      'Recruitment bridge not started. Set UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN, WEB_BASE_URL, and WEB_BOT_API_TOKEN.',
+      'Recruitment bridge not started. Set WEB_BASE_URL and WEB_BOT_API_TOKEN.',
     );
   }
 
