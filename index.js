@@ -9,6 +9,11 @@ const { createRecruitmentBridge } = require("./lib/recruitment/bridge");
 const { createSupabaseClient } = require("./lib/supabase/client");
 const { createAutomationsLoader } = require("./lib/automations/loader");
 const { createAutomationExecutor } = require("./lib/automations/executor");
+const { createCommandsLoader } = require("./lib/commands/loader");
+const { createCommandHandler } = require("./lib/commands/handler");
+const { createAuditLogger } = require("./lib/audit/logger");
+const { createTempVoiceChannels } = require("./lib/voice/temp-channels");
+const { createWelcomeSystem } = require("./lib/welcome/welcome");
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
@@ -40,6 +45,22 @@ async function main() {
       loadAutomations: automationsLoader.loadAutomations,
     });
     console.log("[Automations] Executor started");
+
+    const commandsLoader = createCommandsLoader();
+    createCommandHandler({
+      client,
+      loadCommands: commandsLoader.loadCommands,
+    });
+    console.log("[Commands] Handler started");
+
+    createAuditLogger({ client });
+    console.log("[Audit] Logger started");
+
+    createTempVoiceChannels({ client });
+    console.log("[TempVoice] Handler started");
+
+    createWelcomeSystem({ client });
+    console.log("[Welcome] Handler started");
   } else {
     console.warn("[Automations] MySQL env vars not set — automations disabled");
   }
