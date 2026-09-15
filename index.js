@@ -6,6 +6,7 @@ const {
   loadDiscordConfigWithRetry,
 } = require("./lib/config/supabase-discord-config");
 const { createRecruitmentBridge } = require("./lib/recruitment/bridge");
+const { createRoleSync } = require("./lib/roles/sync");
 const { createSupabaseClient } = require("./lib/supabase/client");
 const { createAutomationsLoader } = require("./lib/automations/loader");
 const { createAutomationExecutor } = require("./lib/automations/executor");
@@ -26,10 +27,11 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 }
 
 async function main() {
-  const { discord_bot_token: token } = await loadDiscordConfigWithRetry({
-    supabaseUrl: SUPABASE_URL,
-    supabaseAnonKey: SUPABASE_ANON_KEY,
-  });
+  const { discord_bot_token: token, discord_guild_id: guildId } =
+    await loadDiscordConfigWithRetry({
+      supabaseUrl: SUPABASE_URL,
+      supabaseAnonKey: SUPABASE_ANON_KEY,
+    });
 
   const client = createDiscordClient();
 
@@ -78,6 +80,14 @@ async function main() {
       supabaseClient,
     });
     bridge.start();
+
+    const roleSync = createRoleSync({
+      client,
+      guildId,
+      webBaseUrl: WEB_BASE_URL,
+      webApiToken: WEB_BOT_API_TOKEN,
+    });
+    roleSync.start();
   } else {
     console.warn(
       "Recruitment bridge not started. Set WEB_BASE_URL and WEB_BOT_API_TOKEN.",
